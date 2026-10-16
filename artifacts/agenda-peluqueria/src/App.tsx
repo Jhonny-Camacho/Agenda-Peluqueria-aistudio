@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, FormEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ClerkProvider, SignIn, SignUp, useAuth, useClerk } from '@clerk/react';
-import { publishableKeyFromHost } from '@clerk/react/internal';
 import { esES } from '@clerk/localizations';
 import {
   Activity, ArrowLeft, ArrowRight, Bell, CalendarDays, Check, CheckCircle2,
@@ -29,8 +28,91 @@ import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 15000 } } });
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
-const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) || import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || 'pk_test_Y2xlcmsuZXhhbXBsZS5jb20k';
+const configuredClerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+const isClerkConfigured = Boolean(
+  configuredClerkKey &&
+  typeof configuredClerkKey === 'string' &&
+  configuredClerkKey.startsWith('pk_') &&
+  !configuredClerkKey.includes('example.com')
+);
+const clerkPubKey = isClerkConfigured ? configuredClerkKey : '';
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+
+interface AppAuthContextType {
+  isLoaded: boolean;
+  isSignedIn: boolean;
+  userId: string | null;
+  signOut: (options?: { redirectUrl?: string }) => Promise<void>;
+  signInAsOwner: () => void;
+}
+
+const AppAuthContext = createContext<AppAuthContextType>({
+  isLoaded: true,
+  isSignedIn: false,
+  userId: null,
+  signOut: async () => {},
+  signInAsOwner: () => {},
+});
+
+function AppAuthProvider({ children }: { children: ReactNode }) {
+  const [, setLocation] = useLocation();
+  const [isSignedIn, setIsSignedIn] = useState(() => {
+    try {
+      return sessionStorage.getItem('casa_oliva_auth') === 'owner';
+    } catch {
+      return false;
+    }
+  });
+
+  const signOut = async (options?: { redirectUrl?: string }) => {
+    try {
+      sessionStorage.removeItem('casa_oliva_auth');
+    } catch {}
+    setIsSignedIn(false);
+    queryClient.clear();
+    setLocation(options?.redirectUrl || '/');
+  };
+
+  const signInAsOwner = () => {
+    try {
+      sessionStorage.setItem('casa_oliva_auth', 'owner');
+    } catch {}
+    setIsSignedIn(true);
+    setLocation('/agenda');
+  };
+
+  return (
+    <AppAuthContext.Provider
+      value={{
+        isLoaded: true,
+        isSignedIn,
+        userId: isSignedIn ? 'owner-user' : null,
+        signOut,
+        signInAsOwner,
+      }}
+    >
+      {children}
+    </AppAuthContext.Provider>
+  );
+}
+
+function useAppAuth() {
+  const clerkAuth = isClerkConfigured ? useAuth() : null;
+  const localAuth = useContext(AppAuthContext);
+  return isClerkConfigured && clerkAuth ? clerkAuth : localAuth;
+}
+
+function useAppClerk() {
+  const clerk = isClerkConfigured ? useClerk() : null;
+  const localAuth = useContext(AppAuthContext);
+  if (isClerkConfigured && clerk) {
+    return clerk;
+  }
+  return {
+    signOut: localAuth.signOut,
+    addListener: () => () => {},
+  };
+}
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz' }).format(new Date());
 const money = (n: number) => new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(n);
 const humanDate = (date: string, options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' }) =>
@@ -125,7 +207,7 @@ function PublicHome() {
 
 function StaffShell({ member, children }: { member: TeamMember; children: ReactNode }) {
   const [path] = useLocation();
-  const { signOut } = useClerk();
+  const { signOut } = useAppClerk();
   const nav = [{ href: '/agenda', label: 'Agenda del día', icon: CalendarDays }, { href: '/inventario', label: 'Inventario', icon: Package }, { href: '/equipo', label: 'Equipo', icon: Users }];
   return <div className="shell-grid bg-[#f6f2e8]">
     <aside className="sidebar sticky top-0 flex h-[100dvh] flex-col bg-[#1e392e] px-5 py-6 text-[#f8f3e8]"><div className="px-2"><Brand /></div><div className="mt-9 px-3 text-[10px] font-bold uppercase tracking-[.2em] text-[#89998d]">Espacio de trabajo</div><nav className="mt-3 space-y-1">{nav.map(n => <Link key={n.href} href={n.href} className={`nav-link ${path === n.href ? 'active' : ''}`} data-testid={`link-${n.href.slice(1)}`}><n.icon size={17} />{n.label}{path === n.href && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#d5a36f]" />}</Link>)}</nav><div className="mt-auto rounded-xl border border-[#466051] bg-[#29483b] p-4"><div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[.16em] text-[#b5c2b5]"><Activity size={13} />Equipo conectado</div><div className="text-sm font-semibold">{member.name}</div><div className="mt-1 text-xs text-[#b8c6bb]">{member.role === 'owner' ? 'Dueño' : 'Operario/a'}</div><button onClick={() => void signOut({ redirectUrl: '/' })} data-testid="button-sign-out" className="mt-4 flex items-center gap-2 text-xs text-[#d5dfd4] hover:text-white"><LogOut size={14} />Cerrar sesión</button></div><div className="mt-5 flex items-center gap-2 px-2 text-[10px] text-[#9eaea1]"><span className="h-2 w-2 rounded-full bg-[#a5c799]" />Datos sincronizados</div></aside>
@@ -134,7 +216,7 @@ function StaffShell({ member, children }: { member: TeamMember; children: ReactN
   </div>;
 }
 function AuthGate({ children }: { children: (member: TeamMember) => ReactNode }) {
-  const auth = useAuth();
+  const auth = useAppAuth();
   const [, setLocation] = useLocation();
   const session = useGetStaffSession({ query: { enabled: auth.isLoaded && !!auth.isSignedIn, queryKey: getGetStaffSessionQueryKey(), retry: false, staleTime: 0, refetchOnMount: 'always' } });
   if (!auth.isLoaded || (auth.isSignedIn && (session.isLoading || session.isFetching))) return <div className="min-h-[100dvh] bg-[#f6f2e8] p-6"><div className="mx-auto max-w-3xl"><Brand /><div className="panel mt-10 p-7"><Skeleton rows={4} /></div></div></div>;
@@ -317,6 +399,36 @@ function StylistSchedule({stylist,owner,editing,toggle,saving,save}:{stylist:Sty
 }
 
 function AuthPages() {
+  const { signInAsOwner } = useContext(AppAuthContext);
+
+  if (!isClerkConfigured) {
+    return <div className="flex min-h-[100dvh] items-center justify-center bg-[#f1ece1] px-4 py-10">
+      <div className="w-full max-w-[580px] overflow-hidden rounded-[24px] border border-[#e3ddcf] bg-[#fbf8f0] p-8 sm:p-10 shadow-xl text-center">
+        <div className="flex justify-center mb-6">
+          <Brand />
+        </div>
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#f1e8d9] text-[#9a714e] mb-4">
+          <ShieldCheck size={28} />
+        </div>
+        <h1 className="serif text-3xl text-[#294338]">Área del equipo</h1>
+        <p className="mt-3 text-sm leading-6 text-[#6d7970] max-w-md mx-auto">
+          Acceso reservado para el personal de Casa Oliva. Puedes acceder directamente para consultar y gestionar citas, inventario y horarios.
+        </p>
+        <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3">
+          <Button className="btn-primary !py-3 !px-6" onClick={signInAsOwner}>
+            Entrar al panel de gestión <ArrowRight size={16} />
+          </Button>
+          <Link href="/" className="btn btn-outline !py-3 !px-6">
+            Volver a reservas
+          </Link>
+        </div>
+        <p className="mt-8 text-xs text-[#8d968e]">
+          Para habilitar inicio de sesión externo con cuentas reales en producción, añade <code className="font-mono bg-[#eee8db] px-1.5 py-0.5 rounded">VITE_CLERK_PUBLISHABLE_KEY</code>.
+        </p>
+      </div>
+    </div>;
+  }
+
   const appearance = {
     theme: 'simple' as const,
     cssLayerName: 'clerk',
@@ -338,7 +450,7 @@ function Router() {
   </Switch>;
 }
 function HomeRedirect() {
-  const auth = useAuth();
+  const auth = useAppAuth();
   if (!auth.isLoaded) {
     return <div className="min-h-[100dvh] bg-[#f6f2e8] p-6"><div className="mx-auto max-w-3xl"><Brand/><div className="panel mt-10 p-7"><Skeleton rows={3}/></div></div></div>;
   }
@@ -352,11 +464,11 @@ function RoutedErrorBoundary({children}:{children:ReactNode}) {
   return <ErrorBoundary resetKey={location} FallbackComponent={ErrorFallback}>{children}</ErrorBoundary>;
 }
 function ClerkQueryClientCacheInvalidator() {
-  const { addListener } = useClerk();
+  const { addListener } = useAppClerk();
   const client = useQueryClient();
   const previousUserId = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    const unsubscribe = addListener(({ user }) => {
+    const unsubscribe = addListener(({ user }: { user?: { id?: string | null } }) => {
       const userId = user?.id ?? null;
       if (previousUserId.current !== undefined && previousUserId.current !== userId) {
         client.clear();
@@ -371,6 +483,18 @@ function ClerkRoutes() {
   const [, setLocation] = useLocation();
   const stripBase = (path: string) =>
     basePath && path.startsWith(basePath) ? path.slice(basePath.length) || '/' : path;
+
+  const content = (
+    <QueryClientProvider client={queryClient}>
+      <ClerkQueryClientCacheInvalidator/>
+      <RoutedErrorBoundary><Router/></RoutedErrorBoundary>
+    </QueryClientProvider>
+  );
+
+  if (!isClerkConfigured) {
+    return <AppAuthProvider>{content}</AppAuthProvider>;
+  }
+
   return <ClerkProvider
     publishableKey={clerkPubKey}
     proxyUrl={clerkProxyUrl}
@@ -381,10 +505,7 @@ function ClerkRoutes() {
     routerPush={(to) => setLocation(stripBase(to))}
     routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
   >
-    <QueryClientProvider client={queryClient}>
-      <ClerkQueryClientCacheInvalidator/>
-      <RoutedErrorBoundary><Router/></RoutedErrorBoundary>
-    </QueryClientProvider>
+    {content}
   </ClerkProvider>;
 }
 function App() {
