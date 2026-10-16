@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Agenda de peluquería"
+description = "Sistema web adaptable para que los clientes reserven sin crear una cuenta y el equipo gestione citas, horarios, bloqueos e inventario con acceso protegido."
+version = "1.0.0"
+id = "artifacts/agenda-peluqueria"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19160
+
+[services.development]
+run = "pnpm --filter @workspace/agenda-peluqueria run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/agenda-peluqueria", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/agenda-peluqueria/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19160"
+BASE_PATH = "/"

@@ -1,0 +1,643 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API de reservas para peluquería
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+  - name: catalog
+  - name: bookings
+  - name: staff
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /catalog/services:
+    get:
+      operationId: listServices
+      tags: [catalog]
+      summary: List active salon services
+      responses:
+        "200":
+          description: Services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+  /catalog/stylists:
+    get:
+      operationId: listStylists
+      tags: [catalog]
+      summary: List active stylists and working hours
+      responses:
+        "200":
+          description: Stylists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Stylist"
+  /availability:
+    get:
+      operationId: getAvailability
+      tags: [bookings]
+      summary: Find available slots for a service and date
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        - in: query
+          name: serviceId
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: stylistId
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Available start times
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Availability"
+        "400":
+          description: Invalid request
+  /bookings:
+    post:
+      operationId: createPublicBooking
+      tags: [bookings]
+      summary: Create an online booking without an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicBookingInput"
+      responses:
+        "201":
+          description: Booking confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        "400":
+          description: Invalid booking
+        "409":
+          description: Slot is no longer available
+  /staff/me:
+    get:
+      operationId: getStaffSession
+      tags: [staff]
+      summary: Get signed-in team member and role
+      responses:
+        "200":
+          description: Team member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMember"
+        "401":
+          description: Sign in required
+        "403":
+          description: Account is not authorized for the salon
+  /staff/dashboard:
+    get:
+      operationId: getDashboard
+      tags: [staff]
+      summary: Get daily metrics and appointment activity
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+      responses:
+        "200":
+          description: Dashboard overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+        "401":
+          description: Sign in required
+        "403":
+          description: Team access required
+  /staff/appointments:
+    get:
+      operationId: listAppointments
+      tags: [staff]
+      summary: List appointments for a day
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        - in: query
+          name: stylistId
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+        "401":
+          description: Sign in required
+        "403":
+          description: Team access required
+    post:
+      operationId: createStaffBooking
+      tags: [staff]
+      summary: Register an appointment received in person or by phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffBookingInput"
+      responses:
+        "201":
+          description: Appointment registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        "400":
+          description: Invalid booking
+        "401":
+          description: Sign in required
+        "403":
+          description: Team access required
+        "409":
+          description: Slot is no longer available
+  /staff/appointments/{id}:
+    patch:
+      operationId: updateAppointment
+      tags: [staff]
+      summary: Update appointment status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentStatusInput"
+      responses:
+        "200":
+          description: Updated appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        "401":
+          description: Sign in required
+        "403":
+          description: Team access required
+        "404":
+          description: Appointment not found
+  /staff/blocks:
+    get:
+      operationId: listBlocks
+      tags: [staff]
+      summary: List schedule blocks for a day
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        - in: query
+          name: stylistId
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Blocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeBlock"
+        "401":
+          description: Sign in required
+        "403":
+          description: Team access required
+    post:
+      operationId: createBlock
+      tags: [staff]
+      summary: Block a stylist's time (owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimeBlockInput"
+      responses:
+        "201":
+          description: Block created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeBlock"
+        "400":
+          description: Invalid block
+        "401":
+          description: Sign in required
+        "403":
+          description: Owner access required
+        "409":
+          description: Block overlaps an appointment
+  /staff/blocks/{id}:
+    delete:
+      operationId: deleteBlock
+      tags: [staff]
+      summary: Remove a schedule block (owner only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Block removed
+        "401":
+          description: Sign in required
+        "403":
+          description: Owner access required
+        "404":
+          description: Block not found
+  /staff/inventory:
+    get:
+      operationId: listInventory
+      tags: [staff]
+      summary: List salon products and stock
+      responses:
+        "200":
+          description: Inventory
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InventoryItem"
+        "401":
+          description: Sign in required
+        "403":
+          description: Team access required
+    post:
+      operationId: createInventoryItem
+      tags: [staff]
+      summary: Add a product to inventory (owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InventoryItemInput"
+      responses:
+        "201":
+          description: Product added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryItem"
+        "400":
+          description: Invalid product
+        "401":
+          description: Sign in required
+        "403":
+          description: Owner access required
+  /staff/inventory/{id}:
+    patch:
+      operationId: updateInventoryItem
+      tags: [staff]
+      summary: Edit product details or adjust stock
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InventoryItemUpdate"
+      responses:
+        "200":
+          description: Updated product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryItem"
+        "401":
+          description: Sign in required
+        "403":
+          description: Owner access required
+        "404":
+          description: Product not found
+  /staff/team:
+    get:
+      operationId: listTeam
+      tags: [staff]
+      summary: List salon team (owner only)
+      responses:
+        "200":
+          description: Team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamMember"
+        "401":
+          description: Sign in required
+        "403":
+          description: Owner access required
+    post:
+      operationId: addTeamMember
+      tags: [staff]
+      summary: Authorize a team member by email (owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamMemberInput"
+      responses:
+        "201":
+          description: Team member authorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMember"
+        "400":
+          description: Invalid member
+        "401":
+          description: Sign in required
+        "403":
+          description: Owner access required
+        "409":
+          description: Email is already on the team
+  /staff/team/{id}:
+    delete:
+      operationId: removeTeamMember
+      tags: [staff]
+      summary: Remove an employee from the salon (owner only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Team member removed
+        "401":
+          description: Sign in required
+        "403":
+          description: Owner access required
+        "404":
+          description: Team member not found
+  /staff/stylists:
+    get:
+      operationId: listStaffStylists
+      tags: [staff]
+      summary: List stylists and schedules (team only)
+      responses:
+        "200":
+          description: Stylists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Stylist"
+        "401":
+          description: Sign in required
+        "403":
+          description: Team access required
+  /staff/stylists/{id}:
+    patch:
+      operationId: updateStylistSchedule
+      tags: [staff]
+      summary: Update stylist's work schedule (owner only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StylistScheduleInput"
+      responses:
+        "200":
+          description: Updated stylist schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stylist"
+        "401":
+          description: Sign in required
+        "403":
+          description: Owner access required
+        "404":
+          description: Stylist not found
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status: { type: string }
+      required: [status]
+    Service:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        durationMinutes: { type: integer }
+        price: { type: integer }
+        active: { type: boolean }
+      required: [id, name, description, durationMinutes, price, active]
+    WorkHour:
+      type: object
+      properties:
+        weekday: { type: integer, minimum: 0, maximum: 6 }
+        start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        end: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+      required: [weekday, start, end]
+    Stylist:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        title: { type: string }
+        active: { type: boolean }
+        workHours:
+          type: array
+          items: { $ref: "#/components/schemas/WorkHour" }
+      required: [id, name, title, active, workHours]
+    Availability:
+      type: object
+      properties:
+        date: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        serviceId: { type: integer }
+        stylistId: { type: integer }
+        slots:
+          type: array
+          items: { $ref: "#/components/schemas/TimeSlot" }
+      required: [date, serviceId, stylistId, slots]
+    TimeSlot:
+      type: object
+      properties:
+        startTime: { type: string }
+        endTime: { type: string }
+      required: [startTime, endTime]
+    PublicBookingInput:
+      type: object
+      properties:
+        clientName: { type: string, minLength: 2, maxLength: 120 }
+        phone: { type: string, minLength: 6, maxLength: 40 }
+        serviceId: { type: integer }
+        stylistId: { type: integer }
+        date: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        startTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+      required: [clientName, phone, serviceId, stylistId, date, startTime]
+    StaffBookingInput:
+      type: object
+      properties:
+        clientName: { type: string, minLength: 2, maxLength: 120 }
+        phone: { type: string, minLength: 6, maxLength: 40 }
+        serviceId: { type: integer }
+        stylistId: { type: integer }
+        date: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        startTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        source: { type: string, enum: [whatsapp, phone, walkin] }
+      required: [clientName, phone, serviceId, stylistId, date, startTime, source]
+    AppointmentStatusInput:
+      type: object
+      properties:
+        status: { type: string, enum: [pending, attended, cancelled] }
+      required: [status]
+    Appointment:
+      type: object
+      properties:
+        id: { type: integer }
+        clientName: { type: string }
+        phone: { type: string }
+        serviceId: { type: integer }
+        serviceName: { type: string }
+        stylistId: { type: integer }
+        stylistName: { type: string }
+        date: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        startTime: { type: string }
+        endTime: { type: string }
+        status: { type: string, enum: [pending, attended, cancelled] }
+        source: { type: string, enum: [online, whatsapp, phone, walkin] }
+        createdAt: { type: string, format: date-time }
+      required: [id, clientName, phone, serviceId, serviceName, stylistId, stylistName, date, startTime, endTime, status, source, createdAt]
+    Dashboard:
+      type: object
+      properties:
+        date: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        totalAppointments: { type: integer }
+        pendingAppointments: { type: integer }
+        attendedAppointments: { type: integer }
+        cancelledAppointments: { type: integer }
+        newOnlineBookings: { type: integer }
+        appointments:
+          type: array
+          items: { $ref: "#/components/schemas/Appointment" }
+      required: [date, totalAppointments, pendingAppointments, attendedAppointments, cancelledAppointments, newOnlineBookings, appointments]
+    TimeBlockInput:
+      type: object
+      properties:
+        stylistId: { type: integer }
+        date: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+        startTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        endTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        reason: { type: string, maxLength: 120 }
+      required: [stylistId, date, startTime, endTime, reason]
+    TimeBlock:
+      allOf:
+        - $ref: "#/components/schemas/TimeBlockInput"
+        - type: object
+          properties:
+            id: { type: integer }
+            stylistName: { type: string }
+          required: [id, stylistName]
+    InventoryItemInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        sku: { type: string, maxLength: 50 }
+        stock: { type: integer, minimum: 0 }
+        minimumStock: { type: integer, minimum: 0 }
+        price: { type: integer, minimum: 0 }
+      required: [name, sku, stock, minimumStock, price]
+    InventoryItemUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        sku: { type: string, maxLength: 50 }
+        stock: { type: integer, minimum: 0 }
+        minimumStock: { type: integer, minimum: 0 }
+        price: { type: integer, minimum: 0 }
+    InventoryItem:
+      allOf:
+        - $ref: "#/components/schemas/InventoryItemInput"
+        - type: object
+          properties:
+            id: { type: integer }
+            updatedAt: { type: string, format: date-time }
+          required: [id, updatedAt]
+    TeamMemberInput:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        name: { type: string, minLength: 2, maxLength: 120 }
+        role: { type: string, enum: [owner, operator] }
+      required: [email, name, role]
+    TeamMember:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [owner, operator] }
+      required: [id, email, name, role]
+    StylistScheduleInput:
+      type: object
+      properties:
+        workHours:
+          type: array
+          items: { $ref: "#/components/schemas/WorkHour" }
+      required: [workHours]
